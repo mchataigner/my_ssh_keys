@@ -208,72 +208,61 @@ def update_authorized_keys_section(path: str, section_name: str, key_lines: List
 
 def main(argv: List[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Fetch SSH public keys and print in authorized_keys format")
-    ap.add_argument("provider", choices=["github", "gitlab", "local", "stdin"],
-                    help="where to fetch keys from")
     ap.add_argument("target", nargs="*", help="username for github/gitlab, or file paths for local. stdin reads from STDIN.")
+    ap.add_argument("--provider", choices=["github", "gitlab", "local", "stdin"], default="github",
+        help="where to fetch keys from (default: github)")
     ap.add_argument("--output", "-o", help="Write output to this file instead of stdout")
     ap.add_argument("--timeout", "-t", type=int, default=10,
                     help="Network timeout in seconds when fetching from providers (default: 10)")
-    ap.add_argument("--fallback-file", "-f", default="~/.ssh/authorized_keys",
-                    help="Fallback authorized_keys file to use if fetching fails or returns no keys")
     ap.add_argument("--auth-file", default="~/.ssh/authorized_keys",
-                    help="Path to the authorized_keys file to update when using --update-section (default: ~/.ssh/authorized_keys)")
-    ap.add_argument("--update-section", metavar="NAME",
-                    help=("Update (replace or insert) a named section inside an authorized_keys file. "
-                          "The section is delimited by comment markers:\n"
-                          "  # BEGIN fetch_ssh_keys:NAME\n"
-                          "  # END   fetch_ssh_keys:NAME\n"
-                          "If the section does not exist it will be appended."))
+                    help="Path to the authorized_keys file to update when using --update (default: ~/.ssh/authorized_keys)")
+    ap.add_argument("--update", action="store_true",
+                    help="Update (replace or insert) the hardcoded section inside an authorized_keys file.")
     args = ap.parse_args(argv)
 
+    PROVIDERS = ["github", "gitlab", "local", "stdin"]
+    provider = args.provider
+    targets = args.target
+    # If provider is specified as the first positional, shift it
+    if targets and targets[0] in PROVIDERS:
+        provider = targets[0]
+        targets = targets[1:]
+
+    # Hardcoded section name
+    SECTION_NAME = "managed"
     try:
         keys: List[str] = []
         source_desc: str | None = None
 
-        # expand fallback path once
-        fallback_path = os.path.expanduser(args.fallback_file)
-
-        if args.provider == "github":
-            if not args.target:
+        if provider == "github":
+            if not targets:
                 raise SystemExit("GitHub provider requires a username")
-            username = args.target[0]
+            username = targets[0]
             try:
                 keys = fetch_github(username, timeout=args.timeout)
                 source_desc = f"github:{username}"
             except RuntimeError as e:
                 print(f"Warning: failed to fetch from github:{username}: {e}", file=sys.stderr)
-                keys = read_local([fallback_path])
-                source_desc = f"fallback:{fallback_path}"
 
-        elif args.provider == "gitlab":
-            if not args.target:
+        elif provider == "gitlab":
+            if not targets:
                 raise SystemExit("GitLab provider requires a username")
-            username = args.target[0]
+            username = targets[0]
             try:
                 keys = fetch_gitlab(username, timeout=args.timeout)
                 source_desc = f"gitlab:{username}"
             except RuntimeError as e:
                 print(f"Warning: failed to fetch from gitlab:{username}: {e}", file=sys.stderr)
-                keys = read_local([fallback_path])
-                source_desc = f"fallback:{fallback_path}"
 
-        elif args.provider == "local":
-            if not args.target:
+        elif provider == "local":
+            if not targets:
                 raise SystemExit("local provider requires at least one file path or directory")
-            keys = read_local(args.target)
+            keys = read_local(targets)
             source_desc = "local"
 
-        elif args.provider == "stdin":
+        elif provider == "stdin":
             keys = read_stdin()
             source_desc = "stdin"
-
-        # If fetch succeeded but returned no keys, try fallback file as well for remote providers
-        if not keys and args.provider in ("github", "gitlab"):
-            print(f"Notice: no keys returned from {source_desc}; trying fallback {fallback_path}", file=sys.stderr)
-            fb = read_local([fallback_path])
-            if fb:
-                keys = fb
-                source_desc = f"fallback:{fallback_path}"
 
         if not keys:
             print("# No valid SSH public keys found.", file=sys.stderr)
@@ -281,22 +270,20 @@ def main(argv: List[str] | None = None) -> int:
         out_lines = format_for_authorized_keys(keys, source=source_desc)
 
         if args.output:
+            if args.update:
+                raise SystemExit("--output and --update are mutually exclusive")
             with open(args.output, "w", encoding="utf-8") as f:
                 f.write("\n".join(out_lines) + ("\n" if out_lines else ""))
+        elif args.update:
+            auth_path = os.path.expanduser(args.auth_file)
+            try:
+                update_authorized_keys_section(auth_path, SECTION_NAME, out_lines, source_desc)
+            except RuntimeError as e:
+                print(f"Error updating authorized_keys file: {e}", file=sys.stderr)
+                return 3
         else:
-            # If requested, update an identified section inside an authorized_keys file
-            if args.update_section:
-                if args.output:
-                    raise SystemExit("--output and --update-section are mutually exclusive")
-                auth_path = os.path.expanduser(args.auth_file)
-                try:
-                    update_authorized_keys_section(auth_path, args.update_section, out_lines, source_desc)
-                except RuntimeError as e:
-                    print(f"Error updating authorized_keys file: {e}", file=sys.stderr)
-                    return 3
-            else:
-                for ln in out_lines:
-                    print(ln)
+            for ln in out_lines:
+                print(ln)
 
         return 0
     except RuntimeError as e:
