@@ -127,12 +127,8 @@ def read_stdin() -> List[str]:
 
 
 def format_for_authorized_keys(lines: List[str], source: str | None = None) -> List[str]:
-    # Currently we output keys as-is. Optionally we could prefix with a comment line.
-    out = []
-    if source:
-        out.append(f"# fetched from {source}")
-    out.extend(lines)
-    return out
+    # Return only the valid key lines. Do not include comment lines or empty lines.
+    return [l for l in (line.strip() for line in lines) if l and not l.startswith("#")]
 
 
 def main(argv: List[str] | None = None) -> int:
@@ -174,7 +170,7 @@ def main(argv: List[str] | None = None) -> int:
 
         if args.output:
             with open(args.output, "w", encoding="utf-8") as f:
-                f.write("\n".join(out_lines) + ("\n" if out_lines and not out_lines[-1].endswith("\n") else ""))
+                f.write("\n".join(out_lines) + ("\n" if out_lines else ""))
         else:
             for ln in out_lines:
                 print(ln)
