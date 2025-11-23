@@ -46,34 +46,14 @@ jobs:
 
       - name: Create Homebrew formula (with computed sha256)
         run: |
-          mkdir -p dist
-          TAG=${TAG:-${GITHUB_REF#refs/tags/}}
-          SHA=${SHA256}
-          # generate formula referencing release tarball
-          cat > dist/fetch-ssh-keys.rb <<'EOF'
-class FetchSshKeys < Formula
-  desc "Fetch SSH public keys from providers and print in authorized_keys format"
-  homepage "https://github.com/${GITHUB_REPOSITORY}"
-  url "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
-  sha256 "${SHA}"
-  license "MIT"
-
-  uses_from_macos "python"
-
-  def install
-    bin.install "fetch_ssh_keys"
-    prefix.install "LICENSE"
-  end
-
-  test do
-    assert_predicate bin/"fetch_ssh_keys", :exist?
-  end
-end
-EOF
+          TAG=${GITHUB_REF#refs/tags/}
+          # compute SHA was set earlier when creating the tarball as SHA256 environment
+          echo "TAG=${TAG}" >> $GITHUB_ENV || true
+          # run generator script
+          ./.github/scripts/generate_formula.sh
 
           # move tarball and any created packages into dist
           mv my_ssh_keys-${TAG}.tar.gz dist/ || true
-          # move debs (dpkg-buildpackage writes to parent)
           mv ../*.deb dist/ 2>/dev/null || true
           mv *.deb dist/ 2>/dev/null || true
           mv *.pkg.tar.zst dist/ 2>/dev/null || true
