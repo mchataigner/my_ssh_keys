@@ -60,7 +60,7 @@ jobs:
           if [ -f PKGBUILD ]; then
             sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD || true
           fi
-          docker run --rm -v "${{ github.workspace }}:/src" -w / src archlinux:latest bash -lc '
+          docker run --rm -v "${{ github.workspace }}:/src" -w /src archlinux:latest bash -lc '
             set -e
             pacman -Sy --noconfirm --needed base-devel git python
             useradd -m builder || true
