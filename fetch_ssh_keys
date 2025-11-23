@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-fetch_ssh_keys.py
+fetch_ssh_keys
 
 Fetch SSH public keys from common providers and print them in authorized_keys format.
 
 Usage examples:
-  python fetch_ssh_keys.py github torvalds
-  python fetch_ssh_keys.py gitlab gitlab-org
-  python fetch_ssh_keys.py local ~/.ssh/id_rsa.pub ~/.ssh/another_key.pub
-  echo "ssh-ed25519 AAAA... user@host" | python fetch_ssh_keys.py stdin
+  python fetch_ssh_keys github torvalds
+  python fetch_ssh_keys gitlab gitlab-org
+  python fetch_ssh_keys local ~/.ssh/id_rsa.pub ~/.ssh/another_key.pub
+  echo "ssh-ed25519 AAAA... user@host" | python fetch_ssh_keys stdin
 
 This script avoids external dependencies and uses urllib from the stdlib.
 """
