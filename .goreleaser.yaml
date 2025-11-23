@@ -1,0 +1,89 @@
+# GoReleaser configuration for fetch_ssh_keys Go build
+# Make sure to check the documentation at https://goreleaser.com
+
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+
+before:
+  hooks:
+    # Ensure Go modules are tidy
+    - go mod tidy -C ./go
+
+builds:
+  # Rust build
+  - id: my_ssh_keys_rust
+    builder: rust
+    binary: my-ssh-keys
+    targets:
+      - x86_64-unknown-linux-gnu
+      - aarch64-unknown-linux-gnu
+      - aarch64-apple-darwin
+
+archives:
+  - id: default
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+nfpms:
+  - id: default
+    package_name: my-ssh-keys
+    maintainer: "Mathieu Bressolle Chataigner <mathieui@example.com>"
+    description: "Fetch SSH public keys from common providers"
+    homepage: "https://github.com/mchataigner/my_ssh_keys"
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+      - archlinux
+    bindir: /usr/bin
+    contents:
+      - src: ./LICENSE
+        dst: /usr/share/doc/my-ssh-keys/LICENSE
+      - src: ./README.md
+        dst: /usr/share/doc/my-ssh-keys/README.md
+
+# brews:
+#   - name: my-ssh-keys
+#     homepage: "https://github.com/mchataigner/my_ssh_keys"
+#     description: "Fetch SSH public keys from common providers"
+#     license: MIT
+#     repository:
+#       owner: mchataigner
+#       name: homebrew-tap
+#       branch: main
+#     commit_author:
+#       name: goreleaserbot
+#       email: bot@goreleaser.com
+#     directory: Formula
+#     install: |
+#       bin.install "fetch_ssh_keys"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"

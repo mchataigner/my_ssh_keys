@@ -1,0 +1,26 @@
+[package]
+name = "my-ssh-keys"
+version = "0.1.0"
+edition = "2021"
+authors = ["Mathieu Chataigner"]
+description = "Fetch SSH public keys from providers and print them in authorized_keys format"
+license-file = "../LICENSE"
+
+[features]
+default = []
+gitlab = ["dep:serde_json", "dep:serde"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+ureq = { version = "2.10", default-features = false, features = ["json", "tls"] }
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+glob = "0.3"
+shellexpand = "3.1"
+
+[profile.release]
+opt-level = "z"     # Optimize for size instead of speed
+lto = true          # Enable Link Time Optimization
+codegen-units = 1   # Better optimization (slower compile)
+strip = true        # Strip symbols
+panic = "abort"     # Don't include unwinding code

@@ -1,0 +1,9 @@
+# BEGIN fetch_ssh_keys:testsec
+# source: stdin
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJyVexamplekey user@test
+# END fetch_ssh_keys:testsec
+
+# BEGIN fetch_ssh_keys:managed
+# source: local
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJyVexamplekey user@test
+# END fetch_ssh_keys:managed
