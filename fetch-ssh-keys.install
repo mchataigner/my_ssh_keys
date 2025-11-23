@@ -1,0 +1,28 @@
+#!/bin/bash
+# Installation script for pacman to show post-install messages
+
+post_install() {
+    cat <<'EOF'
+To use fetch-ssh-keys as an AuthorizedKeysCommand, add the following to /etc/ssh/sshd_config:
+
+  # Example: fetch GitHub public keys for the SSH username
+  AuthorizedKeysCommand /usr/local/bin/fetch_ssh_keys github %u
+  AuthorizedKeysCommandUser nobody
+
+Adjust the provider (github|gitlab|local) and arguments as needed. For example, to use GitLab:
+
+  AuthorizedKeysCommand /usr/local/bin/fetch_ssh_keys gitlab %u
+
+After editing `/etc/ssh/sshd_config` restart the sshd service:
+
+  sudo systemctl restart sshd
+
+Notes:
+- Ensure the command is executable and readable by the `AuthorizedKeysCommandUser` (e.g. `nobody`).
+- The command must print the public keys to stdout in authorized_keys format.
+EOF
+}
+
+post_upgrade() {
+    post_install
+}

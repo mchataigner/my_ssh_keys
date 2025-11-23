@@ -1,0 +1,88 @@
+name: Build and release packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release-packages:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine tag
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Create source tarball
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          # create tarball rooted at my_ssh_keys-TAG/
+          git archive --format=tar --prefix=my_ssh_keys-${TAG}/ ${GITHUB_REF#refs/tags/} | gzip > my_ssh_keys-${TAG}.tar.gz
+          echo "TAG=${TAG}" >> $GITHUB_ENV
+          SHA=$(sha256sum my_ssh_keys-${TAG}.tar.gz | awk '{print $1}')
+          echo "SHA256=${SHA}" >> $GITHUB_ENV
+
+      - name: Build Debian package
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential devscripts fakeroot debhelper dh-python python3
+          # dpkg-buildpackage will produce artifacts in the parent directory
+          dpkg-buildpackage -us -uc -b || true
+
+      - name: Build Arch package (in Arch Linux container)
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          docker run --rm -v "${{ github.workspace }}:/src" -w /src archlinux:latest bash -lc '
+            set -e
+            pacman -Sy --noconfirm --needed base-devel git
+            useradd -m builder || true
+            chown -R builder:builder /src
+            su builder -c "cd /src && makepkg -s --noconfirm || true"
+          '
+
+      - name: Create Homebrew formula (with computed sha256)
+        run: |
+          mkdir -p dist
+          TAG=${TAG:-${GITHUB_REF#refs/tags/}}
+          SHA=${SHA256}
+          # generate formula referencing release tarball
+          cat > dist/fetch-ssh-keys.rb <<'EOF'
+class FetchSshKeys < Formula
+  desc "Fetch SSH public keys from providers and print in authorized_keys format"
+  homepage "https://github.com/${GITHUB_REPOSITORY}"
+  url "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
+  sha256 "${SHA}"
+  license "MIT"
+
+  uses_from_macos "python"
+
+  def install
+    bin.install "fetch_ssh_keys"
+    prefix.install "LICENSE"
+  end
+
+  test do
+    assert_predicate bin/"fetch_ssh_keys", :exist?
+  end
+end
+EOF
+
+          # move tarball and any created packages into dist
+          mv my_ssh_keys-${TAG}.tar.gz dist/ || true
+          # move debs (dpkg-buildpackage writes to parent)
+          mv ../*.deb dist/ 2>/dev/null || true
+          mv *.deb dist/ 2>/dev/null || true
+          mv *.pkg.tar.zst dist/ 2>/dev/null || true
+
+      - name: Create GitHub release and upload artifacts
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
+          files: dist/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

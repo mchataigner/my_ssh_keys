@@ -1,0 +1,5 @@
+my-ssh-keys (1.0-1) unstable; urgency=medium
+
+  * Initial Debian packaging.
+
+ -- Mathieu Chataigner <mchataigner@example.com>  Sun, 23 Nov 2025 12:00:00 +0000
