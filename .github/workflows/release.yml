@@ -14,16 +14,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Determine tag
-        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+      - name: Determine tag and version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          # strip leading 'v' from tags like v1.2.3 to get version 1.2.3
+          VERSION=${TAG#v}
+          echo "TAG=${TAG}" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
       - name: Create source tarball
         run: |
           TAG=${GITHUB_REF#refs/tags/}
-          # create tarball rooted at my_ssh_keys-TAG/
-          git archive --format=tar --prefix=my_ssh_keys-${TAG}/ ${GITHUB_REF#refs/tags/} | gzip > my_ssh_keys-${TAG}.tar.gz
+          VERSION=${TAG#v}
+          # create tarball rooted at my_ssh_keys-VERSION/
+          git archive --format=tar --prefix=my_ssh_keys-${VERSION}/ ${GITHUB_REF#refs/tags/} | gzip > my_ssh_keys-${VERSION}.tar.gz
           echo "TAG=${TAG}" >> $GITHUB_ENV
-          SHA=$(sha256sum my_ssh_keys-${TAG}.tar.gz | awk '{print $1}')
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          SHA=$(sha256sum my_ssh_keys-${VERSION}.tar.gz | awk '{print $1}')
           echo "SHA256=${SHA}" >> $GITHUB_ENV
 
       - name: Build Debian package
@@ -36,6 +43,7 @@ jobs:
       - name: Build Arch package (in Arch Linux container)
         run: |
           TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
           docker run --rm -v "${{ github.workspace }}:/src" -w /src archlinux:latest bash -lc '
             set -e
             pacman -Sy --noconfirm --needed base-devel git python
@@ -47,13 +55,15 @@ jobs:
       - name: Create Homebrew formula (with computed sha256)
         run: |
           TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
           # compute SHA was set earlier when creating the tarball as SHA256 environment
           echo "TAG=${TAG}" >> $GITHUB_ENV || true
-          # run generator script
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV || true
+          # run generator script (generator should use VERSION and SHA256 from env)
           ./.github/scripts/generate_formula.sh
 
           # move tarball and any created packages into dist
-          mv my_ssh_keys-${TAG}.tar.gz dist/ || true
+          mv my_ssh_keys-${VERSION}.tar.gz dist/ || true
           mv ../*.deb dist/ 2>/dev/null || true
           mv *.deb dist/ 2>/dev/null || true
           mv *.pkg.tar.zst dist/ 2>/dev/null || true
@@ -62,7 +72,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.TAG }}
-          name: ${{ env.TAG }}
+          name: ${{ env.VERSION }}
           files: dist/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
