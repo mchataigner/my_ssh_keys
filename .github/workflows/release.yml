@@ -15,6 +15,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Ensure dist exists and is writable
+        run: |
+          mkdir -p dist
+          sudo chown -R $(id -u):$(id -g) dist || true
+
       - name: Determine tag and version
         id: vars
         run: |
@@ -39,18 +44,33 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential devscripts fakeroot debhelper dh-python python3
+          # Update debian/changelog to match the release VERSION so the generated .deb has the correct version
+          VERSION=${VERSION:-${GITHUB_REF#refs/tags/}}
+          DCH_EMAIL="mchataigner@example.com"
+          # Write debian/changelog using printf to avoid heredoc issues in YAML blocks
+          printf '%s\n' "my-ssh-keys (${VERSION}) unstable; urgency=medium" "" "  * Release ${VERSION}" "" " -- Mathieu Bressolle Chataigner <${DCH_EMAIL}>  $(date -R)" > debian/changelog
+
           dpkg-buildpackage -us -uc -b
 
       - name: Build Arch package (in Arch Linux container)
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           VERSION=${TAG#v}
-          docker run --rm -v "${{ github.workspace }}:/src" -w /src archlinux:latest bash -lc '
+          # Update PKGBUILD pkgver on the host before running the container
+          if [ -f PKGBUILD ]; then
+            sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD || true
+          fi
+          docker run --rm -v "${{ github.workspace }}:/src" -w / src archlinux:latest bash -lc '
             set -e
             pacman -Sy --noconfirm --needed base-devel git python
             useradd -m builder || true
-            chown -R builder:builder /src
-            su builder -c "cd /src && makepkg -s --noconfirm"
+            # create a container-local build copy to avoid changing ownership of the mounted workspace
+            mkdir -p /build/src
+            cp -a /src/. /build/src/
+            chown -R builder:builder /build/src || true
+            su builder -c "cd /build/src && makepkg -s --noconfirm" || true
+            # copy resulting packages back to the workspace (if any)
+            cp -f /build/src/*.pkg.tar.* /src/ 2>/dev/null || true
           '
 
       - name: Restore workspace ownership (if changed by container)
@@ -60,6 +80,7 @@ jobs:
           sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" || true
 
       - name: Prepare dist directory
+        if: always()
         run: |
           mkdir -p dist
           mv my_ssh_keys-${{ env.VERSION }}.tar.gz dist/ || true
@@ -68,6 +89,7 @@ jobs:
           mv *.pkg.tar.zst dist/ 2>/dev/null || true
 
       - name: Upload dist artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -92,6 +114,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: dist
+          path: dist
 
       - name: Create Homebrew formula (with computed sha256)
         run: |
@@ -135,14 +158,41 @@ jobs:
         with:
           name: dist
 
+      - name: Unpack downloaded Linux dist (if zipped)
+        run: |
+          set -e
+          # If download-artifact saved a single zip at workspace root
+          if [ -f dist.zip ]; then
+            mkdir -p dist
+            unzip -o dist.zip -d dist || true
+          fi
+
+      - name: Ensure dist exists locally
+        run: mkdir -p dist || true
+
       - name: Download macOS dist (if any)
         uses: actions/download-artifact@v4
         with:
           name: dist-macos
+          path: dist-macos
           optional: true
 
+      - name: Unpack downloaded macOS dist (if zipped)
+        run: |
+          set -e
+          if [ -f dist-macos.zip ]; then
+            mkdir -p dist-macos
+            unzip -o dist-macos.zip -d dist-macos || true
+          fi
+
       - name: List dist contents
-        run: ls -la dist || true
+        run: |
+          # merge macOS artifacts into dist if present
+          if [ -d dist-macos ]; then
+            mkdir -p dist
+            cp -r dist-macos/* dist/ || true
+          fi
+          ls -la dist || true
 
       - name: Create GitHub release and upload artifacts
         uses: softprops/action-gh-release@v1

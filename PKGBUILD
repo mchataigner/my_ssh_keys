@@ -1,5 +1,5 @@
 pkgname=fetch-ssh-keys
-pkgver=1.0
+pkgver=0.0.0
 pkgrel=1
 pkgdesc="Fetch SSH public keys from providers and print in authorized_keys format"
 arch=('any')
