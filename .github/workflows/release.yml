@@ -53,6 +53,12 @@ jobs:
             su builder -c "cd /src && makepkg -s --noconfirm"
           '
 
+      - name: Restore workspace ownership (if changed by container)
+        if: always()
+        run: |
+          echo "Restoring ownership of workspace to current runner user"
+          sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" || true
+
       - name: Prepare dist directory
         run: |
           mkdir -p dist
