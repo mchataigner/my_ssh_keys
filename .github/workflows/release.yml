@@ -31,17 +31,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential devscripts fakeroot debhelper dh-python python3
           # dpkg-buildpackage will produce artifacts in the parent directory
-          dpkg-buildpackage -us -uc -b || true
+          dpkg-buildpackage -us -uc -b
 
       - name: Build Arch package (in Arch Linux container)
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           docker run --rm -v "${{ github.workspace }}:/src" -w /src archlinux:latest bash -lc '
             set -e
-            pacman -Sy --noconfirm --needed base-devel git
+            pacman -Sy --noconfirm --needed base-devel git python
             useradd -m builder || true
             chown -R builder:builder /src
-            su builder -c "cd /src && makepkg -s --noconfirm || true"
+            su builder -c "cd /src && makepkg -s --noconfirm"
           '
 
       - name: Create Homebrew formula (with computed sha256)

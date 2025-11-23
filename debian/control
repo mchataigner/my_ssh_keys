@@ -2,7 +2,7 @@ Source: my-ssh-keys
 Section: utils
 Priority: optional
 Maintainer: Mathieu Chataigner <mchataigner@example.com>
-Build-Depends: debhelper-compat (= 13)
+Build-Depends: debhelper (>= 13)
 Standards-Version: 4.6.0
 Homepage: https://github.com/mchataigner/my_ssh_keys
 
