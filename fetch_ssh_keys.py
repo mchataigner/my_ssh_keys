@@ -48,15 +48,15 @@ def fetch_url(url: str, timeout: int = 10) -> str:
         raise RuntimeError(f"URL error when fetching {url}: {e.reason}") from e
 
 
-def fetch_github(username: str) -> List[str]:
+def fetch_github(username: str, timeout: int = 10) -> List[str]:
     """Fetch public keys from GitHub's /<user>.keys endpoint."""
     url = f"https://github.com/{username}.keys"
-    data = fetch_url(url)
+    data = fetch_url(url, timeout=timeout)
     lines = [l.strip() for l in data.splitlines() if l.strip()]
     return [l for l in lines if is_valid_pubkey(l)]
 
 
-def fetch_gitlab(username: str) -> List[str]:
+def fetch_gitlab(username: str, timeout: int = 10) -> List[str]:
     """Fetch public keys from GitLab's public API.
 
     Steps:
@@ -64,7 +64,7 @@ def fetch_gitlab(username: str) -> List[str]:
       2) GET /api/v4/users/<id>/keys to obtain keys
     """
     search_url = f"https://gitlab.com/api/v4/users?username={username}"
-    data = fetch_url(search_url)
+    data = fetch_url(search_url, timeout=timeout)
     try:
         users = json.loads(data)
     except json.JSONDecodeError as e:
@@ -76,7 +76,7 @@ def fetch_gitlab(username: str) -> List[str]:
         raise RuntimeError("GitLab: couldn't determine user id")
 
     keys_url = f"https://gitlab.com/api/v4/users/{user_id}/keys"
-    data = fetch_url(keys_url)
+    data = fetch_url(keys_url, timeout=timeout)
     try:
         keys = json.loads(data)
     except json.JSONDecodeError as e:
@@ -131,37 +131,149 @@ def format_for_authorized_keys(lines: List[str], source: str | None = None) -> L
     return [l for l in (line.strip() for line in lines) if l and not l.startswith("#")]
 
 
+def update_authorized_keys_section(path: str, section_name: str, key_lines: List[str], source: str | None = None) -> None:
+    """Replace or insert a named section in an authorized_keys file.
+
+    The section is delimited by comment markers exactly matching:
+      # BEGIN fetch_ssh_keys:SECTION_NAME
+      ... keys ...
+      # END fetch_ssh_keys:SECTION_NAME
+
+    If the section exists it will be replaced. If it does not exist the section
+    will be appended to the end of the file (creating it if necessary).
+    """
+    start_marker = f"# BEGIN fetch_ssh_keys:{section_name}"
+    end_marker = f"# END fetch_ssh_keys:{section_name}"
+
+    try:
+        orig_lines = read_file_lines(path)
+    except Exception:
+        orig_lines = []
+
+    # Build the replacement section
+    new_section: List[str] = [start_marker]
+    if source:
+        new_section.append(f"# source: {source}")
+    # ensure key_lines are stripped and valid-looking (they should already be)
+    new_section.extend([ln for ln in (l.strip() for l in key_lines) if ln])
+    new_section.append(end_marker)
+
+    out_lines: List[str] = []
+    i = 0
+    replaced = 0
+    n = len(orig_lines)
+    while i < n:
+        line = orig_lines[i]
+        if line.strip() == start_marker:
+            # Found an existing section: skip it until matching end_marker
+            replaced += 1
+            out_lines.extend(new_section)
+            # skip until end_marker (inclusive)
+            i += 1
+            while i < n and orig_lines[i].strip() != end_marker:
+                i += 1
+            if i < n and orig_lines[i].strip() == end_marker:
+                i += 1
+            continue
+        else:
+            out_lines.append(line)
+            i += 1
+
+    if replaced == 0:
+        # Append a blank line separator if file does not end with empty line
+        if out_lines and out_lines[-1].strip() != "":
+            out_lines.append("")
+        out_lines.extend(new_section)
+
+    # Write atomically
+    tmp_path = path + ".tmp"
+    try:
+        # ensure parent directory exists
+        parent = os.path.dirname(os.path.expanduser(path))
+        if parent and not os.path.isdir(parent):
+            os.makedirs(parent, exist_ok=True)
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            for ln in out_lines:
+                f.write(ln + "\n")
+        os.replace(tmp_path, path)
+    except Exception as e:
+        # cleanup tmp file if present
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
+        raise RuntimeError(f"failed to write authorized_keys file {path}: {e}") from e
+
+
 def main(argv: List[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Fetch SSH public keys and print in authorized_keys format")
     ap.add_argument("provider", choices=["github", "gitlab", "local", "stdin"],
                     help="where to fetch keys from")
     ap.add_argument("target", nargs="*", help="username for github/gitlab, or file paths for local. stdin reads from STDIN.")
     ap.add_argument("--output", "-o", help="Write output to this file instead of stdout")
+    ap.add_argument("--timeout", "-t", type=int, default=10,
+                    help="Network timeout in seconds when fetching from providers (default: 10)")
+    ap.add_argument("--fallback-file", "-f", default="~/.ssh/authorized_keys",
+                    help="Fallback authorized_keys file to use if fetching fails or returns no keys")
+    ap.add_argument("--auth-file", default="~/.ssh/authorized_keys",
+                    help="Path to the authorized_keys file to update when using --update-section (default: ~/.ssh/authorized_keys)")
+    ap.add_argument("--update-section", metavar="NAME",
+                    help=("Update (replace or insert) a named section inside an authorized_keys file. "
+                          "The section is delimited by comment markers:\n"
+                          "  # BEGIN fetch_ssh_keys:NAME\n"
+                          "  # END   fetch_ssh_keys:NAME\n"
+                          "If the section does not exist it will be appended."))
     args = ap.parse_args(argv)
 
     try:
         keys: List[str] = []
-        source_desc = None
+        source_desc: str | None = None
+
+        # expand fallback path once
+        fallback_path = os.path.expanduser(args.fallback_file)
+
         if args.provider == "github":
             if not args.target:
                 raise SystemExit("GitHub provider requires a username")
             username = args.target[0]
-            keys = fetch_github(username)
-            source_desc = f"github:{username}"
+            try:
+                keys = fetch_github(username, timeout=args.timeout)
+                source_desc = f"github:{username}"
+            except RuntimeError as e:
+                print(f"Warning: failed to fetch from github:{username}: {e}", file=sys.stderr)
+                keys = read_local([fallback_path])
+                source_desc = f"fallback:{fallback_path}"
+
         elif args.provider == "gitlab":
             if not args.target:
                 raise SystemExit("GitLab provider requires a username")
             username = args.target[0]
-            keys = fetch_gitlab(username)
-            source_desc = f"gitlab:{username}"
+            try:
+                keys = fetch_gitlab(username, timeout=args.timeout)
+                source_desc = f"gitlab:{username}"
+            except RuntimeError as e:
+                print(f"Warning: failed to fetch from gitlab:{username}: {e}", file=sys.stderr)
+                keys = read_local([fallback_path])
+                source_desc = f"fallback:{fallback_path}"
+
         elif args.provider == "local":
             if not args.target:
                 raise SystemExit("local provider requires at least one file path or directory")
             keys = read_local(args.target)
             source_desc = "local"
+
         elif args.provider == "stdin":
             keys = read_stdin()
             source_desc = "stdin"
+
+        # If fetch succeeded but returned no keys, try fallback file as well for remote providers
+        if not keys and args.provider in ("github", "gitlab"):
+            print(f"Notice: no keys returned from {source_desc}; trying fallback {fallback_path}", file=sys.stderr)
+            fb = read_local([fallback_path])
+            if fb:
+                keys = fb
+                source_desc = f"fallback:{fallback_path}"
 
         if not keys:
             print("# No valid SSH public keys found.", file=sys.stderr)
@@ -172,8 +284,19 @@ def main(argv: List[str] | None = None) -> int:
             with open(args.output, "w", encoding="utf-8") as f:
                 f.write("\n".join(out_lines) + ("\n" if out_lines else ""))
         else:
-            for ln in out_lines:
-                print(ln)
+            # If requested, update an identified section inside an authorized_keys file
+            if args.update_section:
+                if args.output:
+                    raise SystemExit("--output and --update-section are mutually exclusive")
+                auth_path = os.path.expanduser(args.auth_file)
+                try:
+                    update_authorized_keys_section(auth_path, args.update_section, out_lines, source_desc)
+                except RuntimeError as e:
+                    print(f"Error updating authorized_keys file: {e}", file=sys.stderr)
+                    return 3
+            else:
+                for ln in out_lines:
+                    print(ln)
 
         return 0
     except RuntimeError as e:

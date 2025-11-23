@@ -1,0 +1,4 @@
+# BEGIN fetch_ssh_keys:testsec
+# source: stdin
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJyVexamplekey user@test
+# END fetch_ssh_keys:testsec
