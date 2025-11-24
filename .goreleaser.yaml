@@ -46,7 +46,7 @@ snapshot:
 
 nfpms:
   - id: default
-    package_name: fetch-ssh-keys
+    package_name: my-ssh-keys
     maintainer: "Mathieu Bressolle Chataigner <mathieui@example.com>"
     description: "Fetch SSH public keys from common providers"
     homepage: "https://github.com/mchataigner/my_ssh_keys"
@@ -59,12 +59,12 @@ nfpms:
     bindir: /usr/bin
     contents:
       - src: ./LICENSE
-        dst: /usr/share/doc/fetch-ssh-keys/LICENSE
+        dst: /usr/share/doc/my-ssh-keys/LICENSE
       - src: ./README.md
-        dst: /usr/share/doc/fetch-ssh-keys/README.md
+        dst: /usr/share/doc/my-ssh-keys/README.md
 
 brews:
-  - name: fetch-ssh-keys
+  - name: my-ssh-keys
     homepage: "https://github.com/mchataigner/my_ssh_keys"
     description: "Fetch SSH public keys from common providers"
     license: MIT
