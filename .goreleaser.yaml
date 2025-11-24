@@ -12,33 +12,6 @@ before:
     - go mod tidy -C ./go
 
 builds:
-  # Go build
-  - id: fetch_ssh_keys_go
-    main: ./go
-    binary: fetch_ssh_keys
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-      - arm
-    goarm:
-      - "7"
-    ignore:
-      - goos: windows
-        goarch: arm
-      - goos: windows
-        goarch: arm64
-    ldflags:
-      - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
-      - -X main.date={{.Date}}
-  
   # Rust build
   - id: my_ssh_keys_rust
     builder: rust
