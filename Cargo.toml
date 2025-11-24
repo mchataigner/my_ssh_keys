@@ -1,5 +1,5 @@
 [package]
-name = "fetch_ssh_keys"
+name = "my-ssh-keys"
 version = "0.1.0"
 edition = "2021"
 authors = ["Mathieu Chataigner"]
