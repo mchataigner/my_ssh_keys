@@ -1,0 +1,3 @@
+AuthorizedKeysCommand my-ssh-keys mchataigner
+AuthorizedKeysCommandUser nobody
+
