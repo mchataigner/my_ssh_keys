@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+
+import fetch_ssh_keys
+
+if __name__ == "__main__":
+    fetch_ssh_keys.main()
