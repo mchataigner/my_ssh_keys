@@ -5,200 +5,49 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
-  build:
-    name: Build Linux packages and source
+  goreleaser:
+    name: Build and release with GoReleaser
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Ensure dist exists and is writable
-        run: |
-          mkdir -p dist
-          sudo chown -R $(id -u):$(id -g) dist || true
-
-      - name: Determine tag and version
-        id: vars
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#v}
-          echo "TAG=${TAG}" >> $GITHUB_ENV
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "TAG=${TAG}"
-          echo "VERSION=${VERSION}"
-
-      - name: Create source tarball
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#v}
-          git archive --format=tar --prefix=my_ssh_keys-${VERSION}/ ${GITHUB_REF#refs/tags/} | gzip > my_ssh_keys-${VERSION}.tar.gz
-          echo "TAG=${TAG}" >> $GITHUB_ENV
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          SHA=$(sha256sum my_ssh_keys-${VERSION}.tar.gz | awk '{print $1}')
-          echo "SHA256=${SHA}" >> $GITHUB_ENV
-
-      - name: Build Debian package
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential devscripts fakeroot debhelper dh-python python3
-          # Update debian/changelog to match the release VERSION so the generated .deb has the correct version
-          VERSION=${VERSION:-${GITHUB_REF#refs/tags/}}
-          DCH_EMAIL="mchataigner@example.com"
-          # Write debian/changelog using printf to avoid heredoc issues in YAML blocks
-          printf '%s\n' "my-ssh-keys (${VERSION}) unstable; urgency=medium" "" "  * Release ${VERSION}" "" " -- Mathieu Bressolle Chataigner <${DCH_EMAIL}>  $(date -R)" > debian/changelog
-
-          dpkg-buildpackage -us -uc -b
-
-      - name: Build Arch package (in Arch Linux container)
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#v}
-          # Update PKGBUILD pkgver on the host before running the container
-          if [ -f PKGBUILD ]; then
-            sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD || true
-          fi
-          docker run --rm -v "${{ github.workspace }}:/src" -w /src archlinux:latest bash -lc '
-            set -e
-            pacman -Sy --noconfirm --needed base-devel git python
-            useradd -m builder || true
-            # create a container-local build copy to avoid changing ownership of the mounted workspace
-            mkdir -p /build/src
-            cp -a /src/. /build/src/
-            chown -R builder:builder /build/src || true
-            su builder -c "cd /build/src && makepkg -s --noconfirm" || true
-            # copy resulting packages back to the workspace (if any)
-            cp -f /build/src/*.pkg.tar.* /src/ 2>/dev/null || true
-          '
-
-      - name: Restore workspace ownership (if changed by container)
-        if: always()
-        run: |
-          echo "Restoring ownership of workspace to current runner user"
-          sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" || true
-
-      - name: Prepare dist directory
-        if: always()
-        run: |
-          mkdir -p dist
-          mv my_ssh_keys-${{ env.VERSION }}.tar.gz dist/ || true
-          mv ../*.deb dist/ 2>/dev/null || true
-          mv *.deb dist/ 2>/dev/null || true
-          mv *.pkg.tar.zst dist/ 2>/dev/null || true
-
-      - name: Upload dist artifact
-        if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: dist
-          path: dist
+          fetch-depth: 0
 
-  homebrew:
-    name: Create Homebrew formula (no compilation required)
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Determine tag and version
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#v}
-          echo "TAG=${TAG}" >> $GITHUB_ENV
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-
-      - name: Download dist artifact
-        uses: actions/download-artifact@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          name: dist
-          path: dist
+          go-version: '1.21'
+          cache-dependency-path: go/go.sum
 
-      - name: Create Homebrew formula (with computed sha256)
-        run: |
-          set -e
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#v}
-          # compute SHA from tarball (recompute on Linux)
-          if [ -f dist/my_ssh_keys-${VERSION}.tar.gz ]; then
-            SHA=$(sha256sum dist/my_ssh_keys-${VERSION}.tar.gz | awk '{print $1}')
-            echo "SHA256=${SHA}" >> $GITHUB_ENV
-          fi
-          bash ./.github/scripts/generate_formula.sh
-          mkdir -p dist
-          mv my_ssh_keys-${VERSION}.tar.gz dist/ || true
-
-      - name: Upload macOS dist
-        uses: actions/upload-artifact@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          name: dist-macos
-          path: dist
+          targets: x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin
 
-  release:
-    name: Create GitHub release and upload artifacts
-    runs-on: ubuntu-latest
-    needs: [build, homebrew]
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Determine tag and version
+      - name: Install cross-compilation tools
         run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#v}
-          echo "TAG=${TAG}" >> $GITHUB_ENV
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          cargo install cross --git https://github.com/cross-rs/cross
 
-      - name: Download Linux dist
-        uses: actions/download-artifact@v4
+      - name: Run GoReleaser for release
+        uses: goreleaser/goreleaser-action@v6
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          name: dist
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Unpack downloaded Linux dist (if zipped)
-        run: |
-          set -e
-          # If download-artifact saved a single zip at workspace root
-          if [ -f dist.zip ]; then
-            mkdir -p dist
-            unzip -o dist.zip -d dist || true
-          fi
-
-      - name: Ensure dist exists locally
-        run: mkdir -p dist || true
-
-      - name: Download macOS dist (if any)
-        uses: actions/download-artifact@v4
+      - name: Run GoReleaser for snapshot
+        uses: goreleaser/goreleaser-action@v6
+        if: >-
+          !startsWith(github.ref, 'refs/tags/')
         with:
-          name: dist-macos
-          path: dist-macos
-          optional: true
-
-      - name: Unpack downloaded macOS dist (if zipped)
-        run: |
-          set -e
-          if [ -f dist-macos.zip ]; then
-            mkdir -p dist-macos
-            unzip -o dist-macos.zip -d dist-macos || true
-          fi
-
-      - name: List dist contents
-        run: |
-          # merge macOS artifacts into dist if present
-          if [ -d dist-macos ]; then
-            mkdir -p dist
-            cp -r dist-macos/* dist/ || true
-          fi
-          ls -la dist || true
-
-      - name: Create GitHub release and upload artifacts
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ env.TAG }}
-          name: ${{ env.VERSION }}
-          files: dist/**
+          version: '~> v2'
+          args: release --snapshot --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,2 +1,6 @@
 # Added by goreleaser init:
 dist/
+
+# Act secrets (never commit)
+.secrets
+.github/workflows/.secrets
