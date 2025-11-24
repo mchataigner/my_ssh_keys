@@ -6,8 +6,14 @@ authors = [
     { name = "Mathieu Chataigner" }
 ]
 requires-python = ">=3.7"
-readme = "README-homebrew.md"
 license = { file = "LICENSE" }
+
+[build-system]
+requires = ["uv_build>=0.9.11,<0.10.0"]
+build-backend = "uv_build"
 
 [tool.uv]
 # uv-specific configuration can be added here if needed
+
+[project.scripts]
+fetch-ssh-keys = "fetch_ssh_keys:main"
