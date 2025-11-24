@@ -1,0 +1,20 @@
+[package]
+name = "fetch_ssh_keys"
+version = "0.1.0"
+edition = "2021"
+authors = ["Mathieu Chataigner"]
+description = "Fetch SSH public keys from providers and print them in authorized_keys format"
+license-file = "../LICENSE"
+
+[features]
+default = []
+gitlab = ["dep:serde_json", "dep:serde"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+regex = "1.11"
+glob = "0.3"
+shellexpand = "3.1"
