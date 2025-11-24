@@ -1,0 +1,67 @@
+# GoReleaser config for fetch-ssh-keys (Python/uv project)
+# This config builds a tarball, attaches it to GitHub releases, and publishes Homebrew and other archives.
+version: 2
+project_name: fetch-ssh-keys
+
+dist: dist
+
+builds:
+  - id: script
+    main: fetch_ssh_keys
+    binary: fetch_ssh_keys
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # This is a Python script, so we just copy it as a binary
+    builder: raw
+    files:
+      - fetch_ssh_keys
+      - LICENSE
+      - README-homebrew.md
+      - README-debian.md
+      - pyproject.toml
+      - uv.lock
+
+archives:
+  - id: tarball
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - fetch_ssh_keys
+      - LICENSE
+      - README-homebrew.md
+      - README-debian.md
+      - pyproject.toml
+      - uv.lock
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: mchataigner
+    name: my_ssh_keys
+    draft: false
+    prerelease: auto
+
+brews:
+  - name: fetch-ssh-keys
+    tap:
+      owner: mchataigner
+      name: homebrew-tap
+    commit_author:
+      name: goreleaserbot
+      email: goreleaser@github.com
+    folder: Formula
+    description: "Fetch SSH public keys from providers and print in authorized_keys format."
+    homepage: "https://github.com/mchataigner/my_ssh_keys"
+    test: |
+      system "#{bin}/fetch_ssh_keys", "--help"
+    install: |
+      bin.install "fetch_ssh_keys"
+    dependencies:
+      - python

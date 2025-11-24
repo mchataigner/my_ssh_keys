@@ -1,0 +1,10 @@
+# This file is managed by uv (https://github.com/astral-sh/uv)
+# It will be automatically updated when you add or remove dependencies.
+# Do not edit by hand unless you know what you are doing.
+
+[[package]]
+name = "fetch-ssh-keys"
+version = "0.1.0"
+
+[metadata]
+content-hash = ""
