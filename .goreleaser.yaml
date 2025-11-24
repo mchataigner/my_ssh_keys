@@ -11,13 +11,10 @@ version: 2
 builds:
   - builder: rust
     binary: my-ssh-keys
-    goos:
-      - linux
-      - windows
-      - darwin
-    goarch:
-      - amd64
-      - arm64
+    targets:
+      - x86_64-unknown-linux-gnu
+      - aarch64-unknown-linux-gnu
+      - aarch64-apple-darwin
 
 archives:
   - formats: [tar.xz]
@@ -35,7 +32,8 @@ archives:
         formats: [zip]
 
 nfpms:
-  - formats:
+  - maintainer: "Mathieu Bressolle Chataigner <mathieui@example.com>"
+    formats:
       - deb
       - rpm
       - apk

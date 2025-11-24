@@ -11,7 +11,6 @@ Usage examples:
 */
 
 use clap::Parser;
-use regex::Regex;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -52,26 +51,41 @@ struct Args {
 
 /// Check if a line is a valid SSH public key
 fn is_valid_pubkey(line: &str) -> bool {
-    let re = Regex::new(
-        r"^(?P<type>ssh-[a-z0-9-]+|ecdsa-sha2-nistp\d+)\s+(?P<body>[A-Za-z0-9+/=]+)(\s+(?P<comment>.*))?$"
-    ).unwrap();
-    re.is_match(line.trim())
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') {
+        return false;
+    }
+    
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 2 {
+        return false;
+    }
+    
+    // Check key type
+    let valid_types = ["ssh-rsa", "ssh-dss", "ssh-ed25519", "ecdsa-sha2-nistp256", 
+                       "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521", "sk-ssh-ed25519@openssh.com",
+                       "sk-ecdsa-sha2-nistp256@openssh.com"];
+    if !valid_types.iter().any(|&t| parts[0] == t) && !parts[0].starts_with("ssh-") {
+        return false;
+    }
+    
+    // Check key body is base64-like
+    let key_body = parts[1];
+    key_body.chars().all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
 }
 
 /// Fetch content from a URL
 fn fetch_url(url: &str, timeout: Duration) -> Result<String, Box<dyn std::error::Error>> {
-    let client = reqwest::blocking::Client::builder()
+    let response = ureq::get(url)
         .timeout(timeout)
-        .user_agent(USER_AGENT)
-        .build()?;
+        .set("User-Agent", USER_AGENT)
+        .call()?;
     
-    let response = client.get(url).send()?;
-    
-    if !response.status().is_success() {
+    if response.status() != 200 {
         return Err(format!("HTTP error {} when fetching {}", response.status(), url).into());
     }
     
-    Ok(response.text()?)
+    Ok(response.into_string()?)
 }
 
 /// Fetch public keys from GitHub's /<user>.keys endpoint
