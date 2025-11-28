@@ -63,7 +63,7 @@ nfpms:
       - src: ./README.md
         dst: /usr/share/doc/my-ssh-keys/README.md
       - src: ./sshd_conf
-        dst: /etc/ssh/sshd_config.d/my-ssh-keys.conf
+        dst: /etc/ssh/sshd_config.d/19-my-ssh-keys.conf
 
 # brews:
 #   - name: my-ssh-keys
