@@ -33,16 +33,13 @@ archives:
       {{- if .Arm }}v{{ .Arm }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats: ['zip']
     files:
       - README.md
       - LICENSE
 
 checksum:
   name_template: 'checksums.txt'
-
-snapshot:
-  name_template: "{{ incpatch .Version }}-next"
 
 nfpms:
   - id: default
@@ -51,6 +48,9 @@ nfpms:
     description: "Fetch SSH public keys from common providers"
     homepage: "https://github.com/mchataigner/my_ssh_keys"
     license: MIT
+
+    file_name_template: "{{ .ConventionalFileName }}"
+
     formats:
       - deb
       - rpm
